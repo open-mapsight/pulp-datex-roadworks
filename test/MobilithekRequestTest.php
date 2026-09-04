@@ -1,0 +1,64 @@
+<?php
+
+declare(strict_types=1);
+
+namespace OpenMapsight\pulpdatexroadworks\dev\test;
+
+use OpenMapsight\pulp\SrcHttpHandler;
+use OpenMapsight\PulpDatexRoadworks;
+use OpenMapsight\PulpMobilithek;
+use PHPUnit\Framework\TestCase;
+use ReflectionObject;
+use RuntimeException;
+
+class MobilithekRequestTest extends TestCase
+{
+    public function testDefaultUrlAndP12CurlOptions(): void
+    {
+        $options = PulpDatexRoadworks::mobilithekGuzzleOptions(
+            'caller-subscription-id',
+            '/tmp/client.p12',
+            'caller-password',
+            'Wed, 01 Jan 2025 00:00:00 GMT'
+        );
+
+        $this->assertSame(PulpDatexRoadworks::SUBSCRIPTION_URL, PulpMobilithek::SUBSCRIPTION_URL);
+        $this->assertSame('https://mobilithek.info:8443/mobilithek/api/v1.0/subscription', PulpDatexRoadworks::SUBSCRIPTION_URL);
+        $this->assertSame('gzip', $options['headers']['Accept-Encoding']);
+        $this->assertSame('Wed, 01 Jan 2025 00:00:00 GMT', $options['headers']['If-Modified-Since']);
+        $this->assertSame(['subscriptionID' => 'caller-subscription-id'], $options['query']);
+        $this->assertSame('/tmp/client.p12', $options['curl'][CURLOPT_SSLCERT]);
+        $this->assertSame('caller-password', $options['curl'][CURLOPT_SSLCERTPASSWD]);
+        $this->assertSame('P12', $options['curl'][CURLOPT_SSLCERTTYPE]);
+        $this->assertTrue($options['decode_content']);
+        $this->assertFalse($options['http_errors']);
+    }
+
+    public function testSrcMobilithekReturnsConfiguredSrcHttpHandler(): void
+    {
+        $handler = PulpDatexRoadworks::srcMobilithek(
+            'sub-1',
+            '/tmp/client.p12',
+            'secret',
+            null,
+            'static.xml'
+        );
+
+        $this->assertInstanceOf(SrcHttpHandler::class, $handler);
+
+        $reflection = new ReflectionObject($handler);
+        $cp = $reflection->getProperty('cp');
+        $this->assertSame('GET', $cp->getValue($handler)->method);
+        $this->assertSame(PulpDatexRoadworks::SUBSCRIPTION_URL, $cp->getValue($handler)->uri);
+        $this->assertSame('static.xml', $cp->getValue($handler)->aliasFileName);
+        $this->assertSame('P12', $cp->getValue($handler)->guzzleOptions['curl'][CURLOPT_SSLCERTTYPE]);
+    }
+
+    public function testRejectsMissingCertificateCredentials(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Mobilithek client certificate path and password must be supplied');
+
+        PulpDatexRoadworks::mobilithekGuzzleOptions('sub-1', '', 'password');
+    }
+}
